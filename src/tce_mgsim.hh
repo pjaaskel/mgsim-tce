@@ -34,22 +34,21 @@
 #ifndef TCE_MGSIM_HH
 #define TCE_MGSIM_HH
 
-#include <arch/Memory.h>
-#include <Operation.hh>
+// TCE headers
 #include <SimpleSimulatorFrontend.hh>
 #include <DetailedOperationSimulator.hh>
-#include <ExecutingOperation.hh>
-#include <SimValue.hh>
+#include <AddressSpace.hh>
+#include <Memory.hh>
 
+// MGSim headers
+#include "arch/Memory.h"
+#include "arch/VirtualMemory.h"
 #include "sim/breakpoints.h"
 #include "sim/config.h"
 #include "sim/configparser.h"
 #include "sim/readfile.h"
 #include "sim/except.h"
 #include "sim/kernel.h"
-
-// Memory system(s) to use:
-#include "arch/mem/SerialMemory.h"
 
 /**
  * A wrapper for the TTA core simulation model.
@@ -66,8 +65,19 @@
         request signal up), advance the cycle of only the outside
         facing FUs
  */
-class MGSimTTACore : public SimpleSimulatorFrontend {
+class MGSimTTACore : 
+    public Simulator::Object, 
+    public SimpleSimulatorFrontend {
 public:
+    MGSimTTACore(
+        const TCEString& coreName, const TCEString& adfFileName,
+        const TCEString& initialProgram, Simulator::Object& parent, 
+        Simulator::Clock& clock);
+    virtual ~MGSimTTACore();
+
+    void replaceMemoryModel(
+        const TCEString& addressSpaceName, 
+        Simulator::IMemory& mgsimMem);
 };
 
 /**
@@ -78,17 +88,38 @@ class MGSimDynamicLSU :
     public Simulator::Object, public Simulator::IMemoryCallback, 
     public DetailedOperationSimulator {
 public:
-    MGSimDynamicLSU();
-    virtual ~MGSimDynamicSU();
+    MGSimDynamicLSU(
+        const TCEString& lsuName, 
+        MGSimTTACore& parentTTA);
+    virtual ~MGSimDynamicLSU();
+
+    // TCE interface: simulate a step in the FU pipeline for an on-flight
+    // operation.
+    virtual bool simulateStage(ExecutingOperation& operation);
+
+    // MGSim interface
+    virtual bool OnMemoryReadCompleted(Simulator::MemAddr addr, const char* data);
+    virtual bool OnMemoryWriteCompleted(Simulator::WClientID wid);
+    virtual bool OnMemoryInvalidated(Simulator::MemAddr addr);
+    virtual Simulator::Object& GetMemoryPeer();
 };
 
 /**
  * A glue wrapper between the TTASim Memory interface and the MGSim
  * memory models.
  */
-class MGSimMemory : public Memory, public Simulator::IMemory {
+class MGSimTCEMemory : public Memory {
 public:
-    
+    MGSimTCEMemory(
+        const TTAMachine::AddressSpace& as,
+        Simulator::IMemory& mgsimMemory);
+    virtual ~MGSimTCEMemory();
+
+    /// The TCE side write/read methods.
+    virtual Memory::MAU read(Word address);
+    virtual void write(Word address, Memory::MAU data);
+private:
+    Simulator::IMemory& mgsimMemory_;
 };
 
 

@@ -1,6 +1,41 @@
+/*
+    Copyright (c) 2002-2013 Tampere University of Technology.
+
+    This file is part of TTA-Based Codesign Environment (TCE).
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+ */
+
+/**
+ * @file ideal_sram_dmem.cc
+ *
+ * Example MGSim-TCE simulator for machines with a single ideal SRAM
+ * data memory.
+ *
+ * @author Pekka Jääskeläinen 2013 (pjaaskel-no.spam-cs.tut.fi)
+ */
+
 #include <cstdlib>
 
 #include "tce_mgsim.hh"
+// Memory system(s) to use:
+#include "arch/mem/SerialMemory.h"
 
 int main(int argc, char** argv) {
 
@@ -14,18 +49,19 @@ int main(int argc, char** argv) {
     Simulator::Object root("", clock);
 
     MGSimTTACore tta(
-        "core0", "minimal_with_stdout.adf",
+        "core0", "minimal_with_stdout.adf", "hello.tpef",
         root, clock);
     
-    MGSimSerialMemory* mem = 
-        new MGSimSerialMemory("data", root, clock, *env.cfg);
-    tta.replaceMemoryModel("data", mem);
+    Simulator::SerialMemory* smem =
+        new Simulator::SerialMemory("data", root, clock, *mgsim.cfg);
 
-    MGSimDynamicLatencyLSU lsu("LSU", tta);
+    tta.replaceMemoryModel("data", *smem);
 
-    mem->Initialize();
+    MGSimDynamicLSU lsu("LSU", tta);
+
+    smem->Initialize();
     
-    tta.loadProgram("hello.tpef");
+    mgsim.DoSteps(10000);
 
     return EXIT_SUCCESS;
 }
