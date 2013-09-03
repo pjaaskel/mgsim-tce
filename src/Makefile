@@ -29,11 +29,18 @@ CXX=clang++
 %.o: %.cpp
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} $< -O3 -c -o $@
 
+run: ideal_sram_dmem hello.tpef
+	./ideal_sram_dmem ideal_sram_dmem.ini
+
 ideal_sram_dmem: ideal_sram_dmem.cc tce_mgsim.o ${MGSIM_OBJECTS}
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} ${LDFLAGS} $< ${MGSIM_OBJECTS} tce_mgsim.o ${TCE_LIBS} -O3 -o $@
 
 tce_mgsim.o: tce_mgsim.hh tce_mgsim.cc 
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} -c tce_mgsim.cc -O3 -o $@
+
+# A test program.
+hello.tpef: hello.c minimal_with_stdout.adf
+	tcecc hello.c -O3 -a minimal_with_stdout.adf -o hello.tpef
 
 clean:
 	rm -f ideal_sram_dmem tce_mgsim.o clustered_multibank

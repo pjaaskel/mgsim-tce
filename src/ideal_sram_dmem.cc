@@ -57,11 +57,11 @@ int main(int argc, char** argv) {
 
     tta.replaceMemoryModel("data", *smem);
 
-    MGSimDynamicLSU lsu("LSU", tta);
+    MGSimDynamicLSU lsu("LSU", tta, *smem, *mgsim.cfg);
 
     smem->Initialize();
     
-    mgsim.DoSteps(10000);
+    mgsim.DoSteps(1000);
 
     return EXIT_SUCCESS;
 }

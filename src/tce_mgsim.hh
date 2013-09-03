@@ -90,7 +90,9 @@ class MGSimDynamicLSU :
 public:
     MGSimDynamicLSU(
         const TCEString& lsuName, 
-        MGSimTTACore& parentTTA);
+        MGSimTTACore& parentTTA,
+        Simulator::IMemory& mgsimMem,
+        Config& config);
     virtual ~MGSimDynamicLSU();
 
     // TCE interface: simulate a step in the FU pipeline for an on-flight
@@ -98,10 +100,19 @@ public:
     virtual bool simulateStage(ExecutingOperation& operation);
 
     // MGSim interface
-    virtual bool OnMemoryReadCompleted(Simulator::MemAddr addr, const char* data);
+    virtual bool OnMemoryReadCompleted(
+        Simulator::MemAddr addr, const char* data);
     virtual bool OnMemoryWriteCompleted(Simulator::WClientID wid);
     virtual bool OnMemoryInvalidated(Simulator::MemAddr addr);
     virtual Simulator::Object& GetMemoryPeer();
+    virtual Simulator::Result mgsimCycleAdvance();
+
+private:
+    // The MGSim Memory model accessed by this LSU.
+    Simulator::IMemory& mgsimMemory_;    
+    Simulator::MCID memClientID_;
+    Simulator::SingleFlag enabled_;
+    Simulator::Process memoryOutgoingProcess_;
 };
 
 /**
