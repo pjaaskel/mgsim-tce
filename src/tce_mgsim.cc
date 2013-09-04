@@ -36,6 +36,7 @@
 #include "MemorySystem.hh"
 #include "ExecutingOperation.hh"
 #include "Operation.hh"
+#include "Operand.hh"
 #include "SimValue.hh"
 
 /**
@@ -146,8 +147,12 @@ MGSimTTACore::replaceMemoryModel(
 Simulator::Result
 MGSimTTACore::mgsimClockAdvance() {
     if (GetKernel()->GetCyclePhase() == Simulator::PHASE_ACQUIRE &&
-        !isGlobalLockRequested())
+        !isGlobalLockRequested()) {
+        // advance the TTA core's simulation clock to receive the
+        // possible new memory requests from the core's LSU simulation
+        // model(s)
         step();
+    }
     return Simulator::SUCCESS;
 }
 
@@ -194,8 +199,8 @@ MGSimDynamicLSU::MGSimDynamicLSU(
 
 Simulator::Result
 MGSimDynamicLSU::mgsimCycleAdvance() {
-    // do nothing here, the TTA core model's cycle advance
-    // implements the ttasim clock advance and locking semantics
+    // Do nothing here at the moment. The TTA core model's cycle advance
+    // implements the ttasim clock advance and locking semantics.
     return Simulator::SUCCESS;
 }
 
@@ -203,25 +208,69 @@ MGSimDynamicLSU::~MGSimDynamicLSU() {
 }
 
 /**
- * This is called on non-locked cycle of TTA via the ttasim
+ * This is called on each non-locked cycle of TTA via the ttasim
  * cycle advance call.
+ *
+ * This should collect the memory requests. However, they should be
+ * issued in a method that is called also on TTA lock cycles because
+ * the retrying of the unsuccessful requests must be done on each
+ * cycle.
  */
 bool
 MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
-    PRINT_VAR(operation.operation().name());
+
+    const Operation& op = operation.operation();
+    PRINT_VAR(op.name());
     PRINT_VAR(GetKernel()->GetCycleNo());
-    PRINT_VAR(parentTTA_.cycleCount());
+    PRINT_VAR(parentTTA_.cycleCount());   
+    if (op.readsMemory()) {
+        assert(op.operand(1).isAddress() && op.operand(2).isMemoryData());
+        Simulator::MemAddr addr = operation.io(1).uIntWordValue();
+        size_t size = 
+            op.operand(2).elementWidth() * op.operand(2).elementCount();
+        Application::logStream() 
+            << "size " << size << "read from " << addr << std::endl;
+        mgsimMemory_.Read(memClientID_, addr);
+    } else if (op.writesMemory()) {
+        assert(op.operand(1).isAddress() && op.operand(2).isMemoryData());
+        Simulator::MemAddr addr = operation.io(1).uIntWordValue();
+        size_t size = 
+            op.operand(2).elementWidth() * op.operand(2).elementCount();
+
+        // TODO: need to align the access to the cache line size and
+        // mask only the bytes I want to write
+        Simulator::MemData data;
+        for (int i = 0; i < size / 8; ++i) {
+            // TODO: the wide accesses
+            data.data[i] = 
+                ((char*)&(operation.iostorage_[2].value_.doubleWord))[i];
+            data.mask[i] = true;
+        }
+
+        // TODO: the writes need to be reissued if it does not get through?
+        
+        Application::logStream() 
+            << "size " << size << "read from " << addr << std::endl;
+
+        mgsimMemory_.Write(memClientID_, addr, data, (Simulator::WClientID)-1);
+    } else {
+        // for non-memory operations, fall back to the standard TTA 
+        // simulation model
+        return false; 
+    }
     return true;
 }
 
 bool
 MGSimDynamicLSU::OnMemoryReadCompleted(
     Simulator::MemAddr addr, const char* data) {
+    /* TODO: place the received data to the "pipeline register" */
     abortWithError("Unimplemented.");
 }
 
 bool
 MGSimDynamicLSU::OnMemoryWriteCompleted(Simulator::WClientID wid) {
+   /* TODO: mark completion of a write */
     abortWithError("Unimplemented.");
 }
 
