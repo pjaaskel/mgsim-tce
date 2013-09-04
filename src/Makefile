@@ -23,7 +23,7 @@ TCE_LIBS=-ltce
 
 CPPFLAGS=-I${TCE_PREFIX}/include -I${MGSIM_SRC_ROOT}/ -I${MGSIM_BUILD_ROOT}
 LDFLAGS=-L${TCE_PREFIX}/lib
-CXXFLAGS=-Wno-c++11-extensions -std=c++11
+CXXFLAGS=-g -Wno-c++11-extensions -std=c++11
 CXX=clang++
 
 %.o: %.cpp

@@ -128,6 +128,9 @@ private:
     Simulator::Process memoryOutgoingProcess_;
     Simulator::MCID memClientID_;
     MGSimTTACore& parentTTA_;
+    // The size of a data block transferred between the memory
+    // and the LSU.
+    size_t dataBusWidth_;
 };
 
 /**

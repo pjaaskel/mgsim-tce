@@ -180,10 +180,11 @@ MGSimDynamicLSU::MGSimDynamicLSU(
         *this, "send-memory-requests", 
         Simulator::delegate::create<
             MGSimDynamicLSU, &MGSimDynamicLSU::mgsimCycleAdvance>(*this)),
-    parentTTA_(parentTTA)
-                                    
-{
-    /* TODO: register as a user of the memory */
+    parentTTA_(parentTTA),
+    // The MGSim memories are always accessed a "cache line" at a time
+    // (even if not using a cache), call it "data bus width" here.
+    dataBusWidth_(config.getValue<Simulator::CycleNo>("CacheLineSize")) {
+
     parentTTA.setOperationSimulator(lsuName, *this);
     enabled_.Sensitive(memoryOutgoingProcess_);
     config.registerObject(*this, GetName());
@@ -229,30 +230,49 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
         size_t size = 
             op.operand(2).elementWidth() * op.operand(2).elementCount();
         Application::logStream() 
-            << "size " << size << "read from " << addr << std::endl;
+            << size << "b read from " << addr << std::endl;
         mgsimMemory_.Read(memClientID_, addr);
     } else if (op.writesMemory()) {
         assert(op.operand(1).isAddress() && op.operand(2).isMemoryData());
         Simulator::MemAddr addr = operation.io(1).uIntWordValue();
-        size_t size = 
-            op.operand(2).elementWidth() * op.operand(2).elementCount();
+
+        // The starting address of the data block to access. 
+        Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
+        
+        PRINT_VAR(addr);
+        PRINT_VAR(blockStart);
+
+        size_t operationSize = 
+            op.operand(2).elementWidth() * op.operand(2).elementCount() / 8;
 
         // TODO: need to align the access to the cache line size and
         // mask only the bytes I want to write
         Simulator::MemData data;
-        for (int i = 0; i < size / 8; ++i) {
+        // mask out the bytes before the part we want to write
+        for (int i = 0; i < (addr - blockStart); ++i) {
+            data.mask[i] = false;
+        }
+        // the wanted bytes
+        for (int i = (addr - blockStart); 
+             i < (addr - blockStart + operationSize); ++i) {
             // TODO: the wide accesses
             data.data[i] = 
                 ((char*)&(operation.iostorage_[2].value_.doubleWord))[i];
             data.mask[i] = true;
         }
-
-        // TODO: the writes need to be reissued if it does not get through?
+        // mask out the bytes after the part we want to write
+        for (int i = addr - blockStart + operationSize; 
+             i < dataBusWidth_; ++i) {
+            data.mask[i] = false;
+        }
+        
+        // TODO: the writes need to be reissued if it does not get through
         
         Application::logStream() 
-            << "size " << size << "read from " << addr << std::endl;
+            << "b write to " << addr << std::endl;
 
-        mgsimMemory_.Write(memClientID_, addr, data, (Simulator::WClientID)-1);
+        mgsimMemory_.Write(
+            memClientID_, blockStart, data, (Simulator::WClientID)-1);
     } else {
         // for non-memory operations, fall back to the standard TTA 
         // simulation model
