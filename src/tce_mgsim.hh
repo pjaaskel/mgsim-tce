@@ -78,6 +78,20 @@ public:
     void replaceMemoryModel(
         const TCEString& addressSpaceName, 
         Simulator::IMemory& mgsimMem);
+
+    bool isGlobalLockRequested() const;
+
+    void setLockRequest() { lockRequests_++; }
+    void unsetLockRequest() { lockRequests_--; }
+
+    // MGSim interface
+    virtual Simulator::Result mgsimClockAdvance();
+
+private:
+    Simulator::SingleFlag enabled_;
+    Simulator::Process clockAdvanceProcess_;
+    // Number of LSUs that have requested a lock.
+    std::size_t lockRequests_;
 };
 
 /**
@@ -110,9 +124,10 @@ public:
 private:
     // The MGSim Memory model accessed by this LSU.
     Simulator::IMemory& mgsimMemory_;    
-    Simulator::MCID memClientID_;
     Simulator::SingleFlag enabled_;
     Simulator::Process memoryOutgoingProcess_;
+    Simulator::MCID memClientID_;
+    MGSimTTACore& parentTTA_;
 };
 
 /**

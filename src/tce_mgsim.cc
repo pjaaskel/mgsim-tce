@@ -34,13 +34,16 @@
 #include "Application.hh"
 #include "Machine.hh"
 #include "MemorySystem.hh"
+#include "ExecutingOperation.hh"
+#include "Operation.hh"
+#include "SimValue.hh"
 
 /**
    Division of responsiblities to implement the correct lock timings
    with the MGSim model.
 
    Global lock is requested by a load-store unit (LSU) in case of
-   a) arbitration conflict: cannot issue the access at all
+   a) an arbitration conflict: cannot issue the access at all
    due to contention somewhere in the memory system
    b) dynamic latencies: the result could not be received
    within the static architectural latency of the memory
@@ -74,6 +77,35 @@
    take care all of it? Could be doable that way if the
    TTA core model gets access to all in flight operations
    and sees their latency counters.
+
+   Steps to simulate a cycle:
+
+   - advanceCycle() to the TTASim engine (not locked)
+     - simulate a TTA instruction; this can trigger one or more
+       loads or stores to one or more memory
+     - the operation simulation interface issues the requests
+     - i.e. the core model is the only one that receives the
+       clock signal and rest of the actions are done internally
+       in the ttasim's cycle method
+   - the LSU models recive the read requests when they arrive,
+     they also monitor write requests in case they take too much
+     time to propagate to the memory
+   - Receive notifications of the completions directly to LSUs to update
+     the output registers (basically update the readiness of the value in
+     the queue).
+
+   How to detect the lock situations:
+   - arbitration conflict: when the LSU sees that the issue did not get
+     through, it raises the global_lock_request flag which is up until
+     the request gets through. The LSU model does not get cycle advance
+     calls until it is down again, i.e., the MGSim callbacks take care
+     of updating the values to disable the glock status.
+   - dynamic latency: the LSU receives the clock advance call and
+     is going to put a result to an output when it sees that the
+     request has not been finished for a result that should be written
+     to the output, it asserts the glock signal until the result has
+     been recevied.     
+   
  */
 
 
@@ -83,7 +115,14 @@ MGSimTTACore::MGSimTTACore(
     const TCEString& initialProgram, Simulator::Object& parent, 
     Simulator::Clock& clock) :
     Simulator::Object(TCEString("tce.") + coreName, parent, clock), 
-    SimpleSimulatorFrontend(adfFileName, initialProgram) {
+    SimpleSimulatorFrontend(adfFileName, initialProgram),
+    enabled_("b_enabled", *this, GetClock(), true),
+    clockAdvanceProcess_(
+        *this, "clock-advance", 
+        Simulator::delegate::create<
+            MGSimTTACore, &MGSimTTACore::mgsimClockAdvance>(*this)),
+    lockRequests_(0) {
+    enabled_.Sensitive(clockAdvanceProcess_);
 }
 
 MGSimTTACore::~MGSimTTACore() {
@@ -104,6 +143,23 @@ MGSimTTACore::replaceMemoryModel(
         as, MemorySystem::MemoryPtr(memWrapper), true);
 }
 
+Simulator::Result
+MGSimTTACore::mgsimClockAdvance() {
+    if (GetKernel()->GetCyclePhase() == Simulator::PHASE_ACQUIRE &&
+        !isGlobalLockRequested())
+        step();
+    return Simulator::SUCCESS;
+}
+
+/**
+ * Check if any of the LSUs have requested a global lock.
+ */
+bool
+MGSimTTACore::isGlobalLockRequested() const {
+    return lockRequests_ > 0;
+}
+
+
 ////// MGSimDynamicLSU ///////////////////////////////////////////////////
 MGSimDynamicLSU::MGSimDynamicLSU(
     const TCEString& lsuName, 
@@ -116,9 +172,10 @@ MGSimDynamicLSU::MGSimDynamicLSU(
     mgsimMemory_(mgsimMem), 
     enabled_("b_enabled", *this, GetClock(), true),
     memoryOutgoingProcess_(
-        *this, "semd-memory-requests", 
+        *this, "send-memory-requests", 
         Simulator::delegate::create<
-            MGSimDynamicLSU, &MGSimDynamicLSU::mgsimCycleAdvance>(*this))
+            MGSimDynamicLSU, &MGSimDynamicLSU::mgsimCycleAdvance>(*this)),
+    parentTTA_(parentTTA)
                                     
 {
     /* TODO: register as a user of the memory */
@@ -135,20 +192,10 @@ MGSimDynamicLSU::MGSimDynamicLSU(
 
 }
 
-/**
- * A cycle advance method called from MGSim (three times per cycle?).
- *
- * TODO:
- - Check pending memory accesses in the pipeline and issue them to
-   memory, collect results.
- - If issue fails (an arbitration conflict), request lock from the
-   parent.
- - How to collect the memory operation issued at the current cycle
-   first before calling the mgsimCycleAdvance?
- */
 Simulator::Result
 MGSimDynamicLSU::mgsimCycleAdvance() {
-    PRINT_VAR(GetKernel()->GetCycleNo());
+    // do nothing here, the TTA core model's cycle advance
+    // implements the ttasim clock advance and locking semantics
     return Simulator::SUCCESS;
 }
 
@@ -156,16 +203,15 @@ MGSimDynamicLSU::~MGSimDynamicLSU() {
 }
 
 /**
- * This is called only a a non-locked cycle of TTA.
- *
- * TODO:
- 
- * This will place the results from the pending access requests
- * queue to t
+ * This is called on non-locked cycle of TTA via the ttasim
+ * cycle advance call.
  */
 bool
 MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
-    abortWithError("Unimplemented.");
+    PRINT_VAR(operation.operation().name());
+    PRINT_VAR(GetKernel()->GetCycleNo());
+    PRINT_VAR(parentTTA_.cycleCount());
+    return true;
 }
 
 bool
