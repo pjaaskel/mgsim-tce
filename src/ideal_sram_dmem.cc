@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
 
     MGSimTTACore tta(
         "core0", "minimal_with_stdout.adf", "hello.tpef",
-        root, clock);
+        root, clock, *mgsim.cfg);
     
     Simulator::SerialMemory* smem =
         new Simulator::SerialMemory("data", root, clock, *mgsim.cfg);
@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
 
     smem->Initialize();
     
-    mgsim.DoSteps(1000);
+    mgsim.DoSteps(10000);
 
     return EXIT_SUCCESS;
 }

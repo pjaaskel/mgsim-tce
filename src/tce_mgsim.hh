@@ -50,6 +50,8 @@
 #include "sim/except.h"
 #include "sim/kernel.h"
 
+class MGSimDynamicLSU;
+
 /**
  * A wrapper for the TTA core simulation model.
  *
@@ -67,12 +69,13 @@
  */
 class MGSimTTACore : 
     public Simulator::Object, 
+    public Simulator::IMemoryCallback,
     public SimpleSimulatorFrontend {
 public:
     MGSimTTACore(
         const TCEString& coreName, const TCEString& adfFileName,
         const TCEString& initialProgram, Simulator::Object& parent, 
-        Simulator::Clock& clock);
+        Simulator::Clock& clock, Config& config);
     virtual ~MGSimTTACore();
 
     void replaceMemoryModel(
@@ -84,14 +87,26 @@ public:
     void setLockRequest() { lockRequests_++; }
     void unsetLockRequest() { lockRequests_--; }
 
+    void addDynamicLSU(TCEString adfLSUName, MGSimDynamicLSU& lsu);
+
+    Simulator::Process& clockAdvanceProcess() { return clockAdvanceProcess_; }
+
     // MGSim interface
     virtual Simulator::Result mgsimClockAdvance();
+   virtual bool OnMemoryReadCompleted(
+        Simulator::MemAddr addr, const char* data);
+    virtual bool OnMemoryWriteCompleted(Simulator::WClientID wid);
+    virtual bool OnMemoryInvalidated(Simulator::MemAddr addr);
+    virtual Simulator::Object& GetMemoryPeer();
 
 private:
+    typedef std::vector<MGSimDynamicLSU*> LoadStoreUnitVec;
     Simulator::SingleFlag enabled_;
     Simulator::Process clockAdvanceProcess_;
     // Number of LSUs that have requested a lock.
     std::size_t lockRequests_;
+    // The LSUs that interact with MGSim memory models. 
+    LoadStoreUnitVec lsus_;
 };
 
 /**
@@ -109,6 +124,9 @@ public:
         Config& config);
     virtual ~MGSimDynamicLSU();
 
+    void tryIssuePending();
+    void commitPending();
+
     // TCE interface: simulate a step in the FU pipeline for an on-flight
     // operation.
     virtual bool simulateStage(ExecutingOperation& operation);
@@ -122,15 +140,20 @@ public:
     virtual Simulator::Result mgsimCycleAdvance();
 
 private:
+    typedef std::deque<ExecutingOperation*> ExecutingOperationFIFO;
     // The MGSim Memory model accessed by this LSU.
     Simulator::IMemory& mgsimMemory_;    
-    Simulator::SingleFlag enabled_;
-    Simulator::Process memoryOutgoingProcess_;
+    //Simulator::SingleFlag enabled_;
+    //Simulator::Process memoryOutgoingProcess_;
     Simulator::MCID memClientID_;
     MGSimTTACore& parentTTA_;
     // The size of a data block transferred between the memory
     // and the LSU.
     size_t dataBusWidth_;
+    // The operations that is not yet been committed to the 
+    // memory system (e.g. due to arbitration conflicts).
+    ExecutingOperation* pendingOperation_;
+    ExecutingOperationFIFO incompleteOperations_;
 };
 
 /**
@@ -158,7 +181,8 @@ private:
 class MGSim {
 private:
     ConfigMap overrides;
-    std::vector<std::string> extras; // any additional strings that should be carried around by the Config class
+    // any additional strings that should be carried around by the Config class
+    std::vector<std::string> extras; 
 
 public:
     MGSim(const char *conf);
