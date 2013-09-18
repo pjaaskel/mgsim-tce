@@ -31,11 +31,20 @@
  * @author Pekka Jääskeläinen 2013 (pjaaskel-no.spam-cs.tut.fi)
  */
 
+// Define this in order to compare the simulation states in lock
+// step to the TCE's core-only simulation. Requires all TCE
+// headers (run tools/scripts/install_all_headers in TCE tree).
+//#define TANDEM_VERIFICATION
+
 #include <cstdlib>
 
 #include "tce_mgsim.hh"
 // Memory system(s) to use:
 #include "arch/mem/SerialMemory.h"
+
+#ifdef TANDEM_VERIFICATION
+#include <tce/SimulatorFrontend.hh>
+#endif
 
 int main(int argc, char** argv) {
 
@@ -56,12 +65,36 @@ int main(int argc, char** argv) {
         new Simulator::SerialMemory("data", root, clock, *mgsim.cfg);
 
     tta.replaceMemoryModel("data", *smem);
+    tta.loadProgram("hello.tpef");
 
     MGSimDynamicLSU lsu("LSU", tta, *smem, *mgsim.cfg);
 
     smem->Initialize();
-    
-    mgsim.DoSteps(10000);
+
+#ifdef TANDEM_VERIFICATION    
+    SimulatorFrontend interp(false);
+    interp.loadMachine(tta.machine());
+    interp.loadProgram(tta.program());
+
+    assert (interp.isSimulationInitialized());
+    assert (tta.frontend().isSimulationInitialized());
+
+    while (!tta.frontend().hasSimulationEnded()) {
+        try {
+            interp.step(1);
+            while (tta.cycleCount() != interp.cycleCount())
+                mgsim.DoSteps(1);
+            if (!interp.compareState(tta.frontend(), &std::cerr))
+                return EXIT_FAILURE;
+        } catch (const Exception& e) {
+            std::cerr << "Simulation error: " << e.errorMessage() << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
+#endif
+
+    while (!tta.isFinished())
+        mgsim.DoSteps(1);
 
     return EXIT_SUCCESS;
 }

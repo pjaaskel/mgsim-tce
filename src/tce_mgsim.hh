@@ -154,6 +154,9 @@ private:
     // memory system (e.g. due to arbitration conflicts).
     ExecutingOperation* pendingOperation_;
     ExecutingOperationFIFO incompleteOperations_;
+    // If a result that does not arrive in the architectural latency
+    // is detected, this is set to true until the result arrives.
+    bool lateResult_;
 };
 
 /**

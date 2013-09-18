@@ -38,6 +38,7 @@
 #include "Operation.hh"
 #include "Operand.hh"
 #include "SimValue.hh"
+#include "SimulatorCLI.hh"
 
 /**
    Division of responsiblities to implement the correct lock timings
@@ -77,8 +78,24 @@
 
 
 /**
-   TODO: debug the run by attaching a ttasim console to the simulation which
-   lets inspect the simulation?
+   TODO: 
+   - debug the run by attaching a ttasim console to the simulation which
+   lets inspect the simulation
+   - ttasim tandem: refactor the parts that compare the simulation state and
+   the one that advances cycles. Use it to run non-MGSim simulation and
+   MGSim simulation in tandem to detect differences.
+
+   - ttasim näyttää käyvän koko datamuistin alustuksessa läpi vaikka alustusdataa 
+     on vain hello worldin verra?
+   - datamuistin alustus tapahtuu jo SimFrontin rakentajassa jos ohjelma annetaan,
+   vaikka siinä kohtaa muistirakennetta ei ole vielä asetettu. Tässä tulee muna-kana-ongelma
+   koska SimFront sisältää muistirakenteen ja se rakennetaan vain jos ohjelma annettu. Joten
+   joudutaan lataamaan ohjelma, replacettaan muisti ja latamaan ohjelma uusiksi. Ehkä pitäisi
+   vaan alustaa datamuistit uusiksi jos replacetaan muisti.
+
+   - operaatioiden leveys kysytään OSALilta joten muistioperaatioiden dataoperandien 
+     pitää olla oikein. Nyt ei ole oikein base.opp:ssa muiden kuin 32bit-operaatioiden 
+     tapauksessa.
  */
 //#define DEBUG_TCE_MGSIM
 
@@ -122,12 +139,28 @@ Simulator::Result
 MGSimTTACore::mgsimClockAdvance() {
     switch (GetKernel()->GetCyclePhase()) {
     case Simulator::PHASE_ACQUIRE: 
-
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream()
+            << std::endl
+            << "#### start of ttasim cycle " << cycleCount() + 1
+            << " mgsim cycle " << GetKernel()->GetCycleNo()
+            << std::endl;
+#endif
         if (!isGlobalLockRequested()) {
             // advance the TTA core's simulation clock to receive the
             // possible new memory requests from the core's LSU simulation
-            // model(s)        
+            // model(s)
             step();
+            if (isFinished()) {
+                enabled_.Clear();
+#ifdef DEBUG_TCE_MGSIM 
+                Application::logStream() << "### core simulation finished" << std::endl;
+#endif
+            }
+            if (false && cycleCount() == 7) {
+                SimulatorCLI cli(frontend());
+                cli.run();                                 
+            }
         } else {
 #ifdef DEBUG_TCE_MGSIM
             Application::logStream() << "### core locked" << std::endl;
@@ -147,7 +180,7 @@ MGSimTTACore::mgsimClockAdvance() {
              i != lsus_.end(); ++i) {
             MGSimDynamicLSU& lsu = **i;
             // TODO: how to know which of the requests were committed?
-            // here it just assumes all LSUs got their access committed
+            // here it just assumes all LSUs got their access committed?
             lsu.commitPending();
         }
         break;
@@ -204,9 +237,7 @@ MGSimTTACore::OnMemoryReadCompleted(
 bool
 MGSimTTACore::OnMemoryWriteCompleted(Simulator::WClientID wid) {
 #ifdef DEBUG_TCE_MGSIM
-    Application::logStream() << "write completed" << std::endl;
-    PRINT_VAR(GetKernel()->GetCycleNo());
-    PRINT_VAR(cycleCount());
+    Application::logStream() << "a write completed" << std::endl;
 #endif
     for (LoadStoreUnitVec::iterator i = lsus_.begin(); 
          i != lsus_.end(); ++i) {
@@ -360,6 +391,11 @@ MGSimDynamicLSU::commitPending() {
         size_t operationSize = 
             op.operand(2).elementWidth() * op.operand(2).elementCount() / 8;
 
+        /* These can be removed after base.opp is fixed to have the
+           correct data widths for the non 32-bit data operations. */
+        if (op.name() == "STQ") operationSize = 8;
+        else if (op.name() == "STH") operationSize = 16;
+
         // TODO: need to align the access to the cache line size and
         // mask only the bytes I want to write
         Simulator::MemData data;
@@ -370,10 +406,11 @@ MGSimDynamicLSU::commitPending() {
         // the wanted bytes
         for (int i = (addr - blockStart); 
              i < (addr - blockStart + operationSize); ++i) {
-            // TODO: the wide accesses
-            data.data[i] = 
-                ((char*)&(operation.iostorage_[2].value_.doubleWord))[i];
+            data.data[i] = operation.iostorage_[1].rawBytes()[i - (addr - blockStart)];
             data.mask[i] = true;
+#ifdef DEBUG_TCE_MGSIM
+            PRINT_VAR((int)operation.iostorage_[1].rawBytes()[i - (addr - blockStart)]);
+#endif
         }
         // mask out the bytes after the part we want to write
         for (int i = addr - blockStart + operationSize; 
@@ -413,12 +450,11 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
     const Operation& op = operation.operation();
     if (!(op.readsMemory() || op.writesMemory()))
         return false;
-
+    
 #ifdef DEBUG_TCE_MGSIM
-    PRINT_VAR(op.name());
-    PRINT_VAR(GetKernel()->GetCycleNo());
-    PRINT_VAR(parentTTA_.cycleCount());
-    PRINT_VAR(operation.stage());
+    Application::logStream() 
+        << &operation << " simulate stage " << operation.stage() 
+        << " of " << op.name() << std::endl;
 #endif
     if (operation.stage() == 0) {
         // a new memory operation triggered at this cycle
@@ -429,12 +465,12 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
         parentTTA_.setLockRequest();
     }
     // check if the operation is going to write the result to
-    // the FU register as the architecture latency has passed
+    // the FU register at the next cycle advance
     // and the result has not arrived
     // assume only one pending result at most per operation,
     // does not support multiple output memory operations yet
     if (operation.pendingResults_.size() > 0 &&
-        operation.pendingResults_[0].cyclesToGo_ == 1 &&
+        operation.pendingResults_[0].cyclesToGo_ == 2 &&
         std::find(
             incompleteOperations_.begin(), incompleteOperations_.end(),
             &operation) != incompleteOperations_.end()) {
@@ -442,6 +478,7 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
         // assume we cannot get it as it might or might not
         // arrive at the currently simulated cycle
         parentTTA_.setLockRequest();
+        lateResult_ = true;
     }
     return true;
 }
@@ -458,24 +495,36 @@ MGSimDynamicLSU::OnMemoryReadCompleted(
     const Operation& op = operation.operation();
     if (!op.readsMemory()) return false;
 
-    Simulator::MemAddr eopAddr = operation.io(1).uIntWordValue();
+    Simulator::MemAddr wordAddr = operation.io(1).uIntWordValue();
     size_t size = 
         op.operand(2).elementWidth() * op.operand(2).elementCount();
-    Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
-    if (blockStart != addr) return false;
+    Simulator::MemAddr blockAddr = (wordAddr/dataBusWidth_)*dataBusWidth_;
+    if (blockAddr != addr) return false;
+
+    /* These can be removed after base.opp is fixed to have the
+       correct data widths for the non 32-bit data operations. */
+    if (op.name() == "LDQ") size = 8;
+    else if (op.name() == "LDH") size = 16;
 
 #ifdef DEBUG_TCE_MGSIM
     Application::logStream() 
-        << size << "b read from " << addr << " completed at stage " 
-        << operation.stage() << std::endl;
+        << &operation << ": "
+        << size << "b read (" << op.name() << ") from " << wordAddr 
+        << " completed at stage " << operation.stage() << std::endl;
 #endif
 
     for (size_t i = 0; i < size / 8; ++i) {
-        operation.iostorage_[1].rawBytes()[i] = data[i + (eopAddr - blockStart)];
+        operation.iostorage_[1].rawBytes()[i] = data[i + (wordAddr - blockAddr)];
+#ifdef DEBUG_TCE_MGSIM
+        PRINT_VAR((int)operation.iostorage_[1].rawBytes()[i]);
+#endif
     }
     incompleteOperations_.pop_front();
-    // a result that pessimistically locked the core has arrived
-    parentTTA_.unsetLockRequest();
+    if (lateResult_) {
+        // assume the result that we waited for has now arrived       
+        parentTTA_.unsetLockRequest();
+        lateResult_ = false;
+    }
     return true;
 }
 
@@ -486,7 +535,13 @@ MGSimDynamicLSU::OnMemoryWriteCompleted(Simulator::WClientID wid) {
     ExecutingOperation& operation = *incompleteOperations_.at(0);
     const Operation& op = operation.operation();
     if (!op.writesMemory()) return false;
-
+    
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream()
+        << &incompleteOperations_.front() << " " << op.name() 
+        << " completed" << std::endl;
+#endif
+       
     incompleteOperations_.pop_front();
     return true;
 }
@@ -523,6 +578,7 @@ MGSimTCEMemory::~MGSimTCEMemory() {
 Memory::MAU
 MGSimTCEMemory::read(Word address) {
     Memory::MAU data;
+    //PRINT_VAR(address);
     dynamic_cast<Simulator::IMemoryAdmin&>(mgsimMemory_).Read(
         address, &data, 1);
     return data;
@@ -537,6 +593,7 @@ MGSimTCEMemory::read(Word address) {
  */ 
 void
 MGSimTCEMemory::write(Word address, Memory::MAU data) {
+    //   PRINT_VAR(address);
     dynamic_cast<Simulator::IMemoryAdmin&>(mgsimMemory_).Write(
         address, &data, NULL, 1);
 }
