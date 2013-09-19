@@ -1,13 +1,11 @@
 integration API usability
 -------------------------
-- currently the data memory image is initialized in the program loading
-  time. Also the actual simulation engine (state) is initialized only
-  if the program is loaded (compiled engine needs it). Thus, after we
-  replace the memory model with the MGSim one, the data memory should 
-  be reinitialized automatically.
 - The width of the memory operations should be returned from the OSAL.
   Now they are hard coded because base.opp has wrong values for smaller
   scalar accesses.
+- When one replaces a memory model with an MGSim one, it could
+  automatically search for any LSUs that access it and replace them
+  with MGSim models aswell.
 
 integration to TCE
 ------------------

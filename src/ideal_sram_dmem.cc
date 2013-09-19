@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
         new Simulator::SerialMemory("data", root, clock, *mgsim.cfg);
 
     tta.replaceMemoryModel("data", *smem);
-    tta.loadProgram("hello.tpef");
+    //tta.loadProgram("hello.tpef");
 
     MGSimDynamicLSU lsu("LSU", tta, *smem, *mgsim.cfg);
 

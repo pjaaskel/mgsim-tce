@@ -77,26 +77,6 @@
  */
 
 
-/**
-   TODO: 
-   - debug the run by attaching a ttasim console to the simulation which
-   lets inspect the simulation
-   - ttasim tandem: refactor the parts that compare the simulation state and
-   the one that advances cycles. Use it to run non-MGSim simulation and
-   MGSim simulation in tandem to detect differences.
-
-   - ttasim näyttää käyvän koko datamuistin alustuksessa läpi vaikka alustusdataa 
-     on vain hello worldin verra?
-   - datamuistin alustus tapahtuu jo SimFrontin rakentajassa jos ohjelma annetaan,
-   vaikka siinä kohtaa muistirakennetta ei ole vielä asetettu. Tässä tulee muna-kana-ongelma
-   koska SimFront sisältää muistirakenteen ja se rakennetaan vain jos ohjelma annettu. Joten
-   joudutaan lataamaan ohjelma, replacettaan muisti ja latamaan ohjelma uusiksi. Ehkä pitäisi
-   vaan alustaa datamuistit uusiksi jos replacetaan muisti.
-
-   - operaatioiden leveys kysytään OSALilta joten muistioperaatioiden dataoperandien 
-     pitää olla oikein. Nyt ei ole oikein base.opp:ssa muiden kuin 32bit-operaatioiden 
-     tapauksessa.
- */
 //#define DEBUG_TCE_MGSIM
 
 
@@ -133,6 +113,8 @@ MGSimTTACore::replaceMemoryModel(
 
     memSystem.addAddressSpace(
         as, MemorySystem::MemoryPtr(memWrapper), true);
+
+    initializeDataMemories(&as);
 }
 
 Simulator::Result
