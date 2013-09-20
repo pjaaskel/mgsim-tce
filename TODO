@@ -1,18 +1,10 @@
 integration API usability
 -------------------------
-- The width of the memory operations should be returned from the OSAL.
-  Now they are hard coded because base.opp has wrong values for smaller
-  scalar accesses.
 - When one replaces a memory model with an MGSim one, it could
   automatically search for any LSUs that access it and replace them
-  with MGSim models aswell.
-
-integration to TCE
-------------------
-- TCE should detect if MGSim is available: the MGSim dynlib from
-  Raphael?
-- add system simulation test cases to the TCE systemtest suite
-- add documentation on usage
+  with MGSim models as well.
+- Possible to attach to a ttasim CLI and still use its step etc. for stepping
+  the whole MGSim simulation
 
 misc/optimizations
 ------------------
@@ -29,3 +21,11 @@ simulation test cases to add
   - two TTA cores accessing an ideal SRAM with dual ports
   - 64 (or other large number) TTA cores accessing a shared memory
     via an arbiter
+
+integration to TCE
+------------------
+- TCE should detect if MGSim is available and build the integration
+  wrappers as part of libtce.so. Use the MGSim dynlib discussed with Raphael?
+- TODO: needs to be built with a recent compiler (C++11 support required)
+- add system simulation test cases to the TCE systemtest suite
+- add documentation on usage

@@ -139,10 +139,6 @@ MGSimTTACore::mgsimClockAdvance() {
                 Application::logStream() << "### core simulation finished" << std::endl;
 #endif
             }
-            if (false && cycleCount() == 7) {
-                SimulatorCLI cli(frontend());
-                cli.run();                                 
-            }
         } else {
 #ifdef DEBUG_TCE_MGSIM
             Application::logStream() << "### core locked" << std::endl;
@@ -178,6 +174,23 @@ MGSimTTACore::mgsimClockAdvance() {
 bool
 MGSimTTACore::isGlobalLockRequested() const {
     return lockRequests_ > 0;
+}
+
+uint64_t
+MGSimTTACore::clockCycleCount() const {
+    return GetKernel()->GetCycleNo();
+}
+
+void
+MGSimTTACore::printStats(std::ostream* out) const {
+    if (out == NULL) out = &std::cout;
+
+    *out << "### clock cycles: " << clockCycleCount() << std::endl
+         << "### instr cycles: " << cycleCount() << std::endl
+         << "### stall cycles: " << clockCycleCount() - cycleCount() 
+         << " (" << (clockCycleCount() - cycleCount())*100 / cycleCount() << "%)"
+         << std::endl;
+    
 }
 
 /**

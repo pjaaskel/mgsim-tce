@@ -87,6 +87,11 @@ public:
     void setLockRequest() { lockRequests_++; }
     void unsetLockRequest() { lockRequests_--; }
 
+    // returns the total clock cycles, including stalls
+    uint64_t clockCycleCount() const;
+
+    void printStats(std::ostream* out=NULL) const;
+
     void addDynamicLSU(TCEString adfLSUName, MGSimDynamicLSU& lsu);
 
     Simulator::Process& clockAdvanceProcess() { return clockAdvanceProcess_; }
