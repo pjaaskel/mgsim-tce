@@ -92,12 +92,14 @@ MGSimTTACore::MGSimTTACore(
         *this, "clock-advance", 
         Simulator::delegate::create<
             MGSimTTACore, &MGSimTTACore::mgsimClockAdvance>(*this)),
-    lockRequests_(0) {
+    lockRequests_(0), config_(config) {
     enabled_.Sensitive(clockAdvanceProcess_);
     config.registerObject(*this, GetName());
 }
 
 MGSimTTACore::~MGSimTTACore() {
+    for (size_t i = 0; i < lsus_.size(); ++i) 
+        delete lsus_[i];
 }
 
 void
@@ -115,6 +117,17 @@ MGSimTTACore::replaceMemoryModel(
         as, MemorySystem::MemoryPtr(memWrapper), true);
 
     initializeDataMemories(&as);
+
+    // find all the load-store units that refer to the given
+    // memory and replace them with models that interfaces with
+    // the MGSim
+    TTAMachine::Machine::FunctionUnitNavigator nav = machine().functionUnitNavigator();
+    for (int i = 0; i < nav.count(); ++i) {
+        const TTAMachine::FunctionUnit& fu = *nav.item(i);
+        if (!fu.hasAddressSpace() || fu.addressSpace() != &as) continue;
+        addDynamicLSU(
+            fu.name(), new MGSimDynamicLSU(fu.name(), *this, mgsimMem, config_));
+    }
 }
 
 Simulator::Result
@@ -202,9 +215,9 @@ MGSimTTACore::printStats(std::ostream* out) const {
  */
 void
 MGSimTTACore::addDynamicLSU(
-    TCEString adfLSUName, MGSimDynamicLSU& lsu) {
-    setOperationSimulator(adfLSUName, lsu);
-    lsus_.push_back(&lsu);
+    TCEString adfLSUName, MGSimDynamicLSU* lsu) {
+    setOperationSimulator(adfLSUName, *lsu);
+    lsus_.push_back(lsu);
 }
 
 
@@ -269,7 +282,6 @@ MGSimDynamicLSU::MGSimDynamicLSU(
     dataBusWidth_(config.getValue<Simulator::CycleNo>("CacheLineSize")),
     pendingOperation_(NULL) {
 
-    parentTTA.addDynamicLSU(lsuName, *this);
     config.registerObject(*this, GetName());
 
     Simulator::StorageTraceSet traces; 

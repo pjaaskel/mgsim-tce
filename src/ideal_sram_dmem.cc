@@ -66,8 +66,6 @@ int main(int argc, char** argv) {
 
     tta.replaceMemoryModel("data", *smem);
 
-    MGSimDynamicLSU lsu("LSU", tta, *smem, *mgsim.cfg);
-
     smem->Initialize();
 
 #ifdef TANDEM_VERIFICATION    

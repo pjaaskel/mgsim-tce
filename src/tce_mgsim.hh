@@ -92,7 +92,7 @@ public:
 
     void printStats(std::ostream* out=NULL) const;
 
-    void addDynamicLSU(TCEString adfLSUName, MGSimDynamicLSU& lsu);
+    void addDynamicLSU(TCEString adfLSUName, MGSimDynamicLSU* lsu);
 
     Simulator::Process& clockAdvanceProcess() { return clockAdvanceProcess_; }
 
@@ -112,6 +112,7 @@ private:
     std::size_t lockRequests_;
     // The LSUs that interact with MGSim memory models. 
     LoadStoreUnitVec lsus_;
+    Config& config_;
 };
 
 /**

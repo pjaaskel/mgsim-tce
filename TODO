@@ -1,10 +1,8 @@
 integration API usability
 -------------------------
-- When one replaces a memory model with an MGSim one, it could
-  automatically search for any LSUs that access it and replace them
-  with MGSim models as well.
 - Possible to attach to a ttasim CLI and still use its step etc. for stepping
-  the whole MGSim simulation
+  the whole MGSim simulation: Create a wrapper to the regular TTA simulation
+  engine that calls the MGSim step and which is called by the SimFront?
 
 misc/optimizations
 ------------------
@@ -22,8 +20,8 @@ simulation test cases to add
   - 64 (or other large number) TTA cores accessing a shared memory
     via an arbiter
 
-integration to TCE
-------------------
+integration to TCE and pocl
+---------------------------
 - TCE should detect if MGSim is available and build the integration
   wrappers as part of libtce.so. Use the MGSim dynlib discussed with Raphael?
 - TODO: needs to be built with a recent compiler (C++11 support required)
