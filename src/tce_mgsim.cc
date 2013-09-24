@@ -585,7 +585,6 @@ MGSimTCEMemory::~MGSimTCEMemory() {
 Memory::MAU
 MGSimTCEMemory::read(Word address) {
     Memory::MAU data;
-    //PRINT_VAR(address);
     dynamic_cast<Simulator::IMemoryAdmin&>(mgsimMemory_).Read(
         address, &data, 1);
     return data;
@@ -600,7 +599,6 @@ MGSimTCEMemory::read(Word address) {
  */ 
 void
 MGSimTCEMemory::write(Word address, Memory::MAU data) {
-    //   PRINT_VAR(address);
     dynamic_cast<Simulator::IMemoryAdmin&>(mgsimMemory_).Write(
         address, &data, NULL, 1);
 }

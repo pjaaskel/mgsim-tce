@@ -1,15 +1,3 @@
-integration API usability
--------------------------
-- Possible to attach to a ttasim CLI and still use its step etc. for stepping
-  the whole MGSim simulation: Create a wrapper to the regular TTA simulation
-  engine that calls the MGSim step and which is called by the SimFront?
-
-misc/optimizations
-------------------
-- ttasim's data memory initialization might go through the whole data 
-  memory for nothing, i.e., call the admin methods in the startup for all
-  addresses. Check if this is the case and if it could be optimized.
-
 simulation test cases to add
 ----------------------------
 - dual port ideal SRAM case (two scalar LSUs)
@@ -27,3 +15,9 @@ integration to TCE and pocl
 - TODO: needs to be built with a recent compiler (C++11 support required)
 - add system simulation test cases to the TCE systemtest suite
 - add documentation on usage
+
+integration API usability
+-------------------------
+- Possible to attach to a ttasim CLI and still use its step etc. for stepping
+  the whole MGSim simulation: Create a wrapper to the regular TTA simulation
+  engine that calls the MGSim step and which is called by the SimFront?

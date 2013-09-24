@@ -179,6 +179,7 @@ public:
     /// The TCE side write/read methods.
     virtual Memory::MAU read(Word address);
     virtual void write(Word address, Memory::MAU data);
+
 private:
     Simulator::IMemory& mgsimMemory_;
 };
