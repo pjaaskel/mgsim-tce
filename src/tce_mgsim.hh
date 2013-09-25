@@ -51,6 +51,7 @@
 #include "sim/kernel.h"
 
 class MGSimDynamicLSU;
+class MGSim;
 
 /**
  * A wrapper for the TTA core simulation model.
@@ -87,6 +88,8 @@ public:
     void setLockRequest() { lockRequests_++; }
     void unsetLockRequest() { lockRequests_--; }
 
+    bool simulateInTandem(MGSim& mgim);
+
     // returns the total clock cycles, including stalls
     uint64_t clockCycleCount() const;
 
@@ -98,7 +101,7 @@ public:
 
     // MGSim interface
     virtual Simulator::Result mgsimClockAdvance();
-   virtual bool OnMemoryReadCompleted(
+    virtual bool OnMemoryReadCompleted(
         Simulator::MemAddr addr, const char* data);
     virtual bool OnMemoryWriteCompleted(Simulator::WClientID wid);
     virtual bool OnMemoryInvalidated(Simulator::MemAddr addr);
@@ -187,13 +190,10 @@ private:
 
 /**
  * A wrapper for the MGSim simulation kernel.
+ *
+ * @todo rename to MGSimTCE
  */
 class MGSim {
-private:
-    ConfigMap overrides;
-    // any additional strings that should be carried around by the Config class
-    std::vector<std::string> extras; 
-
 public:
     MGSim(const char *conf);
 
@@ -202,6 +202,11 @@ public:
     Simulator::BreakPointManager bps;
 
     void DoSteps(Simulator::CycleNo nCycles);
+
+private:
+    ConfigMap overrides;
+    // any additional strings that should be carried around by the Config class
+    std::vector<std::string> extras; 
 
 };
 

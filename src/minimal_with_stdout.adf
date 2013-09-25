@@ -210,6 +210,10 @@
       <bind name="1">in1t</bind>
       <bind name="2">in2</bind>
       <pipeline>
+        <resource name="MEM">
+          <start-cycle>2</start-cycle>
+          <cycles>1</cycles>
+        </resource>
         <reads name="1">
           <start-cycle>0</start-cycle>
           <cycles>1</cycles>
@@ -225,6 +229,10 @@
       <bind name="1">in1t</bind>
       <bind name="2">in2</bind>
       <pipeline>
+        <resource name="MEM">
+          <start-cycle>2</start-cycle>
+          <cycles>1</cycles>
+        </resource>
         <reads name="1">
           <start-cycle>0</start-cycle>
           <cycles>1</cycles>
@@ -240,6 +248,10 @@
       <bind name="1">in1t</bind>
       <bind name="2">in2</bind>
       <pipeline>
+        <resource name="MEM">
+          <start-cycle>2</start-cycle>
+          <cycles>1</cycles>
+        </resource>
         <reads name="1">
           <start-cycle>0</start-cycle>
           <cycles>1</cycles>

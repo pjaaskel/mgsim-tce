@@ -79,6 +79,7 @@
 
 //#define DEBUG_TCE_MGSIM
 
+#include "SimulatorFrontend.hh"
 
 ////// MGSimTTACore //////////////////////////////////////////////////////
 MGSimTTACore::MGSimTTACore(
@@ -220,14 +221,39 @@ MGSimTTACore::addDynamicLSU(
     lsus_.push_back(lsu);
 }
 
+/**
+ * Lockstep simulate against the pure TTA engine of TCE.
+ *
+ * Useful for debugging the simulation, but only when using
+ * a single core.
+ */
+bool
+MGSimTTACore::simulateInTandem(MGSim& mgsim) {
+    
+    SimpleSimulatorFrontend interp(machine(), program());
+
+    assert (interp.cycleCount() == 0 && cycleCount() == 0);
+
+    while (!isFinished()) {
+        try {
+            interp.step();
+            while (cycleCount() != interp.cycleCount())
+                mgsim.DoSteps(1);
+            if (!interp.frontend().compareState(frontend(), &std::cerr))
+                return false;
+        } catch (const Exception& e) {
+            std::cerr << "Simulation error: " << e.errorMessage() << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
 
 bool
 MGSimTTACore::OnMemoryReadCompleted(
     Simulator::MemAddr addr, const char* data) {
 #ifdef DEBUG_TCE_MGSIM
     Application::logStream() << "a read completed" << std::endl;
-    PRINT_VAR(GetKernel()->GetCycleNo());
-    PRINT_VAR(cycleCount());
 #endif
     for (LoadStoreUnitVec::iterator i = lsus_.begin(); 
          i != lsus_.end(); ++i) {
@@ -347,7 +373,7 @@ MGSimDynamicLSU::tryIssuePending() {
         Simulator::MemData data;
 #ifdef DEBUG_TCE_MGSIM
         Application::logStream() 
-            << "b a write to " << addr << ", issue attempt " << std::endl;
+            << operationSize << "B write to " << addr << ", issue attempt " << std::endl;
 #endif
 
         mgsimMemory_.Write(
@@ -427,7 +453,7 @@ MGSimDynamicLSU::commitPending() {
 
 #ifdef DEBUG_TCE_MGSIM
         Application::logStream() 
-            << "b write to " << addr << " committed " << std::endl;
+            << operationSize << "B write to " << addr << " committed " << std::endl;
 #endif
 
         mgsimMemory_.Write(
@@ -465,19 +491,29 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
 #endif
     if (operation.stage() == 0) {
         // a new memory operation triggered at this cycle
+#ifdef DEBUG_TCE_MGSIM
+        assert (pendingOperation_ == NULL);
+        if (std::find(
+                incompleteOperations_.begin(), 
+                incompleteOperations_.end(), &operation) != incompleteOperations_.end()) {
+            abortWithError(
+                "Operation already in the pending list. Illegal object reuse?");
+        }
+
+#endif
         pendingOperation_ = &operation;
         incompleteOperations_.push_back(&operation);
         // pessimistically assume we need a core lock -- cannot
         // know yet before the arbitration results arrive for the cycle
         parentTTA_.setLockRequest();
     }
-    // check if the operation is going to write the result to
-    // the FU register at the next cycle advance
-    // and the result has not arrived
-    // assume only one pending result at most per operation,
-    // does not support multiple output memory operations yet
-    if (operation.pendingResults_.size() > 0 &&
-        operation.pendingResults_[0].cyclesToGo_ == 2 &&
+
+    // freeze the core in case the operation is getting out of the
+    // FU pipeline at the next cycle without the memory operation (store)
+    // finishing, or if any of the load results have not  arrived in time.
+    // @todo does not support multiple output operations of which results
+    // arrive in different times
+    if (operation.isLastPipelineStage() &&
         std::find(
             incompleteOperations_.begin(), incompleteOperations_.end(),
             &operation) != incompleteOperations_.end()) {
@@ -541,6 +577,7 @@ MGSimDynamicLSU::OnMemoryWriteCompleted(Simulator::WClientID wid) {
     if (incompleteOperations_.size() == 0) return false;
     ExecutingOperation& operation = *incompleteOperations_.at(0);
     const Operation& op = operation.operation();
+
     if (!op.writesMemory()) return false;
     
 #ifdef DEBUG_TCE_MGSIM
@@ -550,6 +587,12 @@ MGSimDynamicLSU::OnMemoryWriteCompleted(Simulator::WClientID wid) {
 #endif
        
     incompleteOperations_.pop_front();
+    if (lateResult_) {
+        // assume the operation of which completion we waited for has
+        // now finished
+        parentTTA_.unsetLockRequest();
+        lateResult_ = false;
+    }
     return true;
 }
 
@@ -679,9 +722,11 @@ MGSim::DoSteps(Simulator::CycleNo nCycles) {
         // See how many processes are in each of the states
         unsigned int num_stalled = 0, num_running = 0;
 
-        for (const Clock* clock = k.GetActiveClocks(); clock != NULL; clock = clock->GetNext())
+        for (const Clock* clock = k.GetActiveClocks(); 
+             clock != NULL; clock = clock->GetNext())
         {
-            for (const Process* process = clock->GetActiveProcesses(); process != NULL; process = process->GetNext())
+            for (const Process* process = clock->GetActiveProcesses(); 
+                 process != NULL; process = process->GetNext())
             {
                 switch (process->GetState())
                 {
@@ -700,8 +745,10 @@ MGSim::DoSteps(Simulator::CycleNo nCycles) {
         }
 
         ss << std::endl
-           << "Deadlock! (at cycle " << k.GetCycleNo() << ')' << std::endl
-           << "(" << num_stalled << " processes stalled;  " << num_running << " processes running)";
+           << "Deadlock! (at cycle " << k.GetCycleNo() << ')' 
+           << std::endl
+           << "(" << num_stalled << " processes stalled;  " 
+           << num_running << " processes running)";
         throw DeadlockException(ss.str());
         UNREACHABLE;
     }

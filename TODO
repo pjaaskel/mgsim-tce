@@ -1,10 +1,11 @@
 simulation test cases to add
 ----------------------------
 - dual port ideal SRAM case (two scalar LSUs)
-- DRAM with variable latency (one scalar LSU)
 - multibanked vector loads and stores
+- multiple address spaces
+- TurboCore
 - shared memory scenarios:
-  - two TTA cores accessing an ideal SRAM with dual ports
+  - two TTA cores accessing an ideal SRAM with two ports
   - 64 (or other large number) TTA cores accessing a shared memory
     via an arbiter
 
@@ -12,7 +13,7 @@ integration to TCE and pocl
 ---------------------------
 - TCE should detect if MGSim is available and build the integration
   wrappers as part of libtce.so. Use the MGSim dynlib discussed with Raphael?
-- TODO: needs to be built with a recent compiler (C++11 support required)
+- needs to be built with a recent compiler (C++11 support required)
 - add system simulation test cases to the TCE systemtest suite
 - add documentation on usage
 
@@ -21,3 +22,12 @@ integration API usability
 - Possible to attach to a ttasim CLI and still use its step etc. for stepping
   the whole MGSim simulation: Create a wrapper to the regular TTA simulation
   engine that calls the MGSim step and which is called by the SimFront?
+
+questions
+---------
+
+- DDR test case hangs (store does not get through) in case MemFreq != CoreFreq.
+  What does the memory model's clock control? Seems I can still control the DDR
+  frequency from the *DDR.Channel* section's :Freq. 
+
+
