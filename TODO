@@ -1,14 +1,13 @@
 simulation test cases to add
 ----------------------------
-- dual port ideal SRAM case (two scalar LSUs)
 - 2-banked 2-LSU with conflict detection 
 - multibanked vector loads and stores
 - multiple address spaces
-- TurboCore
 - shared memory scenarios:
   - two TTA cores accessing an ideal SRAM with two ports
   - 64 (or other large number) TTA cores accessing a shared memory
     via an arbiter
+- TurboCore
 
 integration to TCE and pocl
 ---------------------------
