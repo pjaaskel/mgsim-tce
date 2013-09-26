@@ -119,6 +119,13 @@ MGSimTTACore::replaceMemoryModel(
 
     initializeDataMemories(&as);
 
+    Simulator::StorageTraceSet traces; 
+    Simulator::StorageTraceSet st; 
+    Simulator::MCID mcid =
+        mgsimMem.RegisterClient(
+            *this, this->clockAdvanceProcess(), traces, st, true);
+    clockAdvanceProcess().SetStorageTraces(opt(traces));
+
     // find all the load-store units that refer to the given
     // memory and replace them with models that interfaces with
     // the MGSim
@@ -127,7 +134,7 @@ MGSimTTACore::replaceMemoryModel(
         const TTAMachine::FunctionUnit& fu = *nav.item(i);
         if (!fu.hasAddressSpace() || fu.addressSpace() != &as) continue;
         addDynamicLSU(
-            fu.name(), new MGSimDynamicLSU(fu.name(), *this, mgsimMem, config_));
+            fu.name(), new MGSimDynamicLSU(fu.name(), *this, mgsimMem, mcid, config_));
     }
 }
 
@@ -297,11 +304,12 @@ MGSimDynamicLSU::MGSimDynamicLSU(
     const TCEString& lsuName, 
     MGSimTTACore& parentTTA,
     Simulator::IMemory& mgsimMem,
+    Simulator::MCID mcid,
     Config& config) : 
     Simulator::Object(
         parentTTA.GetName() + "." + lsuName,
         parentTTA, parentTTA.GetClock()),
-    mgsimMemory_(mgsimMem), 
+    mgsimMemory_(mgsimMem), memClientID_(mcid),
     parentTTA_(parentTTA),
     // The MGSim memories are always accessed a "cache line" at a time
     // (even if not using a cache), call it "data bus width" here.
@@ -309,13 +317,6 @@ MGSimDynamicLSU::MGSimDynamicLSU(
     pendingOperation_(NULL) {
 
     config.registerObject(*this, GetName());
-
-    Simulator::StorageTraceSet traces; 
-    Simulator::StorageTraceSet st; 
-    memClientID_ = 
-        mgsimMemory_.RegisterClient(
-            parentTTA, parentTTA.clockAdvanceProcess(), traces, st, true);
-    parentTTA.clockAdvanceProcess().SetStorageTraces(opt(traces));
 
 }
 

@@ -130,6 +130,7 @@ public:
         const TCEString& lsuName, 
         MGSimTTACore& parentTTA,
         Simulator::IMemory& mgsimMem,
+        Simulator::MCID mcid,
         Config& config);
     virtual ~MGSimDynamicLSU();
 
