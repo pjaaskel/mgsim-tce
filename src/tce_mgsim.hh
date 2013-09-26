@@ -70,7 +70,6 @@ class MGSim;
  */
 class MGSimTTACore : 
     public Simulator::Object, 
-    public Simulator::IMemoryCallback,
     public SimpleSimulatorFrontend {
 public:
     MGSimTTACore(
@@ -83,7 +82,7 @@ public:
         const TCEString& addressSpaceName, 
         Simulator::IMemory& mgsimMem);
 
-    bool isGlobalLockRequested() const;
+    bool isLockRequested() const;
 
     void setLockRequest() { lockRequests_++; }
     void unsetLockRequest() { lockRequests_--; }
@@ -101,11 +100,6 @@ public:
 
     // MGSim interface
     virtual Simulator::Result mgsimClockAdvance();
-    virtual bool OnMemoryReadCompleted(
-        Simulator::MemAddr addr, const char* data);
-    virtual bool OnMemoryWriteCompleted(Simulator::WClientID wid);
-    virtual bool OnMemoryInvalidated(Simulator::MemAddr addr);
-    virtual Simulator::Object& GetMemoryPeer();
 
 private:
     typedef std::vector<MGSimDynamicLSU*> LoadStoreUnitVec;
@@ -116,6 +110,9 @@ private:
     // The LSUs that interact with MGSim memory models. 
     LoadStoreUnitVec lsus_;
     Config& config_;
+    // The previously simulated TTA cycle. To avoid simulating the
+    // same cycle more than once.
+    uint64_t lastSimulatedTTACycle_;
 };
 
 /**
@@ -130,12 +127,12 @@ public:
         const TCEString& lsuName, 
         MGSimTTACore& parentTTA,
         Simulator::IMemory& mgsimMem,
-        Simulator::MCID mcid,
         Config& config);
     virtual ~MGSimDynamicLSU();
 
     void tryIssuePending();
     void commitPending();
+    bool needsLock() const;
 
     // TCE interface: simulate a step in the FU pipeline for an on-flight
     // operation.
@@ -147,10 +144,12 @@ public:
     virtual bool OnMemoryWriteCompleted(Simulator::WClientID wid);
     virtual bool OnMemoryInvalidated(Simulator::MemAddr addr);
     virtual Simulator::Object& GetMemoryPeer();
-    virtual Simulator::Result mgsimCycleAdvance();
+    virtual Simulator::Result memoryPortCycle();
 
 private:
     typedef std::deque<ExecutingOperation*> ExecutingOperationFIFO;
+    Simulator::SingleFlag enabled_;
+    Simulator::Process memoryPort_;
     // The MGSim Memory model accessed by this LSU.
     Simulator::IMemory& mgsimMemory_;    
     //Simulator::SingleFlag enabled_;

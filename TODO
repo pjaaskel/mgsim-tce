@@ -31,20 +31,3 @@ questions
   What does the memory model's clock control? Seems I can still control the DDR
   frequency from the *DDR.Channel* section's :Freq. 
 
-- Isolation of request sources in case of multiple LSUs. Currently the TTA model
-  is the only client to the memories. This is to be able to specify at enough 
-  accuracy what happens at what stage during simulation of a cycle. More
-  specifically, it needs to collect all the requests from the LSU models by 
-  calling the cycle advance of the TCE engine *before* the arbitration phase can 
-  start. In other words, it needs to collect all the new memory operations from
-  all the LSUs in the TTA before it knows which memory operations are attempted
-  at the cycle (and are passed to MGSim simulation's arbitration and commit phases).
-
-  Therefore, the TTA core model has to actually issue and commit all the memory requests 
-  on behalf of the LSUs. The problem comes when the results arrive -- how to
-  differentiate to which LSU the result should be pushed to update its simulation
-  state? This is less of a problem when dealing with a single address space: it
-  does not matter which LSU to push it to as each are referring to the same
-  data, but becomes problematic with multiple disjoint address space machines: the
-  address spaces can have the same addresses so we cannot figure out
-  based on the address to which LSU the request is detined to.

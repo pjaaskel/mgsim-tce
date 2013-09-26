@@ -3,6 +3,7 @@ MGSIM_SRC_ROOT=${HOME}/src/mgsim
 MGSIM_BUILD_ROOT=${HOME}/src/mgsim/build
 MGSIM_SOURCES=\
 	${MGSIM_SRC_ROOT}/arch/mem/SerialMemory.cpp \
+	${MGSIM_SRC_ROOT}/arch/mem/ParallelMemory.cpp \
 	${MGSIM_SRC_ROOT}/arch/mem/DDRMemory.cpp \
 	${MGSIM_SRC_ROOT}/arch/mem/BankedMemory.cpp \
 	${MGSIM_SRC_ROOT}/arch/mem/DDR.cpp \
@@ -35,8 +36,9 @@ CXX=clang++
 %.o: %.cpp
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} $< -O3 -c -o $@
 
-run: ideal_dpsram_dmem ideal_dpsram_dmem.ini dram_dmem dram_dmem.ini \
-	ideal_sram_dmem 
+build: ideal_dpsram_dmem ideal_sram_dmem dram_dmem
+
+run: build ideal_dpsram_dmem.ini dram_dmem dram_dmem.ini 
 	@echo "*** ideal SRAM, single port, single LSU"
 	./ideal_sram_dmem ideal_sram_dmem.ini
 	@echo

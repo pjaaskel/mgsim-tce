@@ -90,10 +90,11 @@ MGSimTTACore::MGSimTTACore(
     SimpleSimulatorFrontend(adfFileName, initialProgram),
     enabled_("b_enabled", *this, GetClock(), true),
     clockAdvanceProcess_(
-        *this, "clock-advance", 
+        *this, "clock-advance",
         Simulator::delegate::create<
-            MGSimTTACore, &MGSimTTACore::mgsimClockAdvance>(*this)),
-    lockRequests_(0), config_(config) {
+            MGSimTTACore, &MGSimTTACore::mgsimClockAdvance>(*this)),    
+    lockRequests_(0), config_(config), 
+    lastSimulatedTTACycle_((uint64_t)-1) {
     enabled_.Sensitive(clockAdvanceProcess_);
     config.registerObject(*this, GetName());
 }
@@ -119,12 +120,6 @@ MGSimTTACore::replaceMemoryModel(
 
     initializeDataMemories(&as);
 
-    Simulator::StorageTraceSet traces; 
-    Simulator::StorageTraceSet st; 
-    Simulator::MCID mcid =
-        mgsimMem.RegisterClient(
-            *this, this->clockAdvanceProcess(), traces, st, true);
-    clockAdvanceProcess().SetStorageTraces(opt(traces));
 
     // find all the load-store units that refer to the given
     // memory and replace them with models that interfaces with
@@ -134,67 +129,52 @@ MGSimTTACore::replaceMemoryModel(
         const TTAMachine::FunctionUnit& fu = *nav.item(i);
         if (!fu.hasAddressSpace() || fu.addressSpace() != &as) continue;
         addDynamicLSU(
-            fu.name(), new MGSimDynamicLSU(fu.name(), *this, mgsimMem, mcid, config_));
+            fu.name(), new MGSimDynamicLSU(fu.name(), *this, mgsimMem, config_));
     }
 }
 
 Simulator::Result
 MGSimTTACore::mgsimClockAdvance() {
-    switch (GetKernel()->GetCyclePhase()) {
-    case Simulator::PHASE_ACQUIRE: 
-#ifdef DEBUG_TCE_MGSIM
-        Application::logStream()
-            << std::endl
-            << "#### start of ttasim cycle " << cycleCount() + 1
-            << " mgsim cycle " << GetKernel()->GetCycleNo()
-            << std::endl;
-#endif
-        if (!isGlobalLockRequested()) {
-            // advance the TTA core's simulation clock to receive the
-            // possible new memory requests from the core's LSU simulation
-            // model(s)
-            step();
-            if (isFinished()) {
-                enabled_.Clear();
-#ifdef DEBUG_TCE_MGSIM 
-                Application::logStream() << "### core simulation finished" << std::endl;
-#endif
-            }
-        } else {
-#ifdef DEBUG_TCE_MGSIM
-            Application::logStream() << "### core locked" << std::endl;
-#endif
-        }
-        // keep trying to issue the pending accesses in the LSUs, 
-        // even if the TTA core is locked
-        for (LoadStoreUnitVec::iterator i = lsus_.begin(); 
-             i != lsus_.end(); ++i) {
-            MGSimDynamicLSU& lsu = **i;
-            lsu.tryIssuePending();
-        }
-        break;
-    
-    case Simulator::PHASE_COMMIT:
-        for (LoadStoreUnitVec::iterator i = lsus_.begin(); 
-             i != lsus_.end(); ++i) {
-            MGSimDynamicLSU& lsu = **i;
-            // TODO: how to know which of the requests were committed?
-            // here it just assumes all LSUs got their access committed?
-            lsu.commitPending();
-        }
-        break;
-    default:
+    if (lastSimulatedTTACycle_ == GetKernel()->GetCycleNo())
         return Simulator::SUCCESS;
+
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream()
+        << std::endl
+        << "#### start of ttasim cycle " << cycleCount() + 1
+        << " mgsim cycle " << GetKernel()->GetCycleNo()
+        << std::endl;
+#endif
+
+    if (!isLockRequested()) {
+        // Advance the TTA core's simulation clock to receive the
+        // possible new memory requests from the core's LSU simulation
+        // model(s). Do it only once per MGSim cycle.
+        step();
+        if (isFinished()) {
+            enabled_.Clear();
+#ifdef DEBUG_TCE_MGSIM 
+            Application::logStream() << "### core simulation finished" << std::endl;
+#endif
+        }
+    } else {
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream() << "### core locked" << std::endl;
+#endif
     }
+    lastSimulatedTTACycle_ = GetKernel()->GetCycleNo();
     return Simulator::SUCCESS;
 }
 
 /**
- * Check if any of the LSUs have requested a global lock.
+ * Check if any of the LSUs have requested a lock.
  */
 bool
-MGSimTTACore::isGlobalLockRequested() const {
-    return lockRequests_ > 0;
+MGSimTTACore::isLockRequested() const {
+    for (size_t i = 0; i < lsus_.size(); ++i) {
+        if (lsus_[i]->needsLock()) return true;
+    }
+    return false;
 }
 
 uint64_t
@@ -256,61 +236,22 @@ MGSimTTACore::simulateInTandem(MGSim& mgsim) {
     return true;
 }
 
-bool
-MGSimTTACore::OnMemoryReadCompleted(
-    Simulator::MemAddr addr, const char* data) {
-#ifdef DEBUG_TCE_MGSIM
-    Application::logStream() << "a read completed" << std::endl;
-#endif
-    for (LoadStoreUnitVec::iterator i = lsus_.begin(); 
-         i != lsus_.end(); ++i) {
-        MGSimDynamicLSU& lsu = **i;
-        // the first LSU that is found that is waiting for the
-        // addr is assumed to be receiving the request
-        // @todo: if MCID was accessible here we could route
-        // the result directly to the correct LSU
-        if (lsu.OnMemoryReadCompleted(addr, data)) break;
-    }
-    return true;
-
-}
-
-bool
-MGSimTTACore::OnMemoryWriteCompleted(Simulator::WClientID wid) {
-#ifdef DEBUG_TCE_MGSIM
-    Application::logStream() << "a write completed" << std::endl;
-#endif
-    for (LoadStoreUnitVec::iterator i = lsus_.begin(); 
-         i != lsus_.end(); ++i) {
-        MGSimDynamicLSU& lsu = **i;
-        // @todo: if MCID was accessible here we could route
-        // the result directly to the correct LSU
-        if (lsu.OnMemoryWriteCompleted(wid)) break;
-    }
-    return true;
-}
-
-bool
-MGSimTTACore::OnMemoryInvalidated(Simulator::MemAddr addr) {
-    abortWithError("Unimplemented.");
-}
-
-Simulator::Object&
-MGSimTTACore::GetMemoryPeer() {
-    return *this;
-}
 ////// MGSimDynamicLSU ///////////////////////////////////////////////////
+// @todo rename to MGSimTTALSU
 MGSimDynamicLSU::MGSimDynamicLSU(
     const TCEString& lsuName, 
     MGSimTTACore& parentTTA,
     Simulator::IMemory& mgsimMem,
-    Simulator::MCID mcid,
     Config& config) : 
     Simulator::Object(
         parentTTA.GetName() + "." + lsuName,
         parentTTA, parentTTA.GetClock()),
-    mgsimMemory_(mgsimMem), memClientID_(mcid),
-    parentTTA_(parentTTA),
+    enabled_("b_enabled", *this, GetClock(), true),
+    memoryPort_(
+        *this, "memory-port", 
+        Simulator::delegate::create<
+            MGSimDynamicLSU, &MGSimDynamicLSU::memoryPortCycle>(*this)),
+    mgsimMemory_(mgsimMem), parentTTA_(parentTTA),
     // The MGSim memories are always accessed a "cache line" at a time
     // (even if not using a cache), call it "data bus width" here.
     dataBusWidth_(config.getValue<Simulator::CycleNo>("CacheLineSize")),
@@ -318,12 +259,48 @@ MGSimDynamicLSU::MGSimDynamicLSU(
 
     config.registerObject(*this, GetName());
 
+    Simulator::StorageTraceSet traces; 
+    Simulator::StorageTraceSet st; 
+    memClientID_ =
+        mgsimMem.RegisterClient(*this, memoryPort_, traces, st, true);
+    memoryPort_.SetStorageTraces(opt(traces));
+    enabled_.Sensitive(memoryPort_);
 }
 
+/**
+ * MGSim simulation method for the memory port process.
+ */
 Simulator::Result
-MGSimDynamicLSU::mgsimCycleAdvance() {
-    // Do nothing here at the moment. The TTA core model's cycle advance
-    // implements the ttasim clock advance and locking semantics.
+MGSimDynamicLSU::memoryPortCycle() {
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream() << GetName() << ": memoryPortCycle(): ";
+#endif
+    switch (GetKernel()->GetCyclePhase()) {
+    case Simulator::PHASE_ACQUIRE: 
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream() << "ACQUIRE" << std::endl;
+#endif
+        parentTTA_.mgsimClockAdvance();
+        // issue the operations that were triggered at the current cycle
+        // in the TTA
+        if (pendingOperation_ != NULL)
+            tryIssuePending();
+        break;
+    case Simulator::PHASE_COMMIT:
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream() << "COMMIT" << std::endl;
+#endif
+        if (pendingOperation_ != NULL)
+            commitPending();
+        break;
+    case Simulator::PHASE_CHECK:
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream() << "CHECK" << std::endl;
+#endif
+        break;
+    default:
+        break;
+    }
     return Simulator::SUCCESS;
 }
 
@@ -332,6 +309,10 @@ MGSimDynamicLSU::mgsimCycleAdvance() {
  */ 
 void
 MGSimDynamicLSU::tryIssuePending() {
+
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream() << GetName() << ": tryIssuePending()" << std::endl;
+#endif
 
     // issue any pending memory requests
     // pending memory request means any request that have not been
@@ -347,7 +328,7 @@ MGSimDynamicLSU::tryIssuePending() {
             op.operand(2).elementWidth() * op.operand(2).elementCount();
 #ifdef DEBUG_TCE_MGSIM
         Application::logStream() 
-            << size << "b read from " << addr << std::endl;
+            << GetName() << ": " << size << "b read from " << addr << std::endl;
 #endif
        // The starting address of the data block to access. 
         Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
@@ -359,11 +340,6 @@ MGSimDynamicLSU::tryIssuePending() {
 
         // The starting address of the data block to access. 
         Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
-
-#ifdef DEBUG_TCE_MGSIM        
-        PRINT_VAR(addr);
-        PRINT_VAR(blockStart);
-#endif
 
         size_t operationSize = 
             op.operand(2).elementWidth() * op.operand(2).elementCount() / 8;
@@ -393,6 +369,10 @@ MGSimDynamicLSU::tryIssuePending() {
 void
 MGSimDynamicLSU::commitPending() {
 
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream() << GetName() << ": commitPending()" << std::endl;
+#endif
+
     if (pendingOperation_ == NULL) return;
 
     ExecutingOperation& operation = *pendingOperation_;
@@ -402,13 +382,18 @@ MGSimDynamicLSU::commitPending() {
         Simulator::MemAddr addr = operation.io(1).uIntWordValue();
         size_t size = 
             op.operand(2).elementWidth() * op.operand(2).elementCount();
-#ifdef DEBUG_TCE_MGSIM
-        Application::logStream() 
-            << size << "b read from " << addr << " committed " << std::endl;
-#endif
         Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
 
-        mgsimMemory_.Read(memClientID_, blockStart);
+        if (!mgsimMemory_.Read(memClientID_, blockStart)) 
+            assert("Could not commit a read" && false);
+
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream() 
+            << GetName() << ": "
+            << &operation << " "
+            << size << "b read from " << addr << " committed " << std::endl;
+#endif
+
     } else if (op.writesMemory()) {
 
         assert(op.operand(1).isAddress() && op.operand(2).isMemoryData());
@@ -487,7 +472,7 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
     
 #ifdef DEBUG_TCE_MGSIM
     Application::logStream() 
-        << &operation << " simulate stage " << operation.stage() 
+        << GetName() << ": " << &operation << " simulate TTA stage " << operation.stage() 
         << " of " << op.name() << std::endl;
 #endif
     if (operation.stage() == 0) {
@@ -506,12 +491,13 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
         incompleteOperations_.push_back(&operation);
         // pessimistically assume we need a core lock -- cannot
         // know yet before the arbitration results arrive for the cycle
-        parentTTA_.setLockRequest();
+        //       parentTTA_.setLockRequest();
     }
 
+#if 0
     // freeze the core in case the operation is getting out of the
     // FU pipeline at the next cycle without the memory operation (store)
-    // finishing, or if any of the load results have not  arrived in time.
+    // finishing, or if any of the load results have not arrived in time.
     // @todo does not support multiple output operations of which results
     // arrive in different times
     if (operation.isLastPipelineStage() &&
@@ -521,9 +507,16 @@ MGSimDynamicLSU::simulateStage(ExecutingOperation& operation) {
         // the result should be available at the next cycle,
         // assume we cannot get it as it might or might not
         // arrive at the currently simulated cycle
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream() 
+        << GetName() << ": "
+        << &operation << " at its last pipeline stage, need to lock at the next cycle"
+        << std::endl;
+#endif
         parentTTA_.setLockRequest();
         lateResult_ = true;
     }
+#endif
     return true;
 }
 
@@ -531,14 +524,18 @@ bool
 MGSimDynamicLSU::OnMemoryReadCompleted(
     Simulator::MemAddr addr, const char* data) {
 
-    if (incompleteOperations_.size() == 0) return false;
+    if (GetKernel()->GetCyclePhase() != Simulator::PHASE_COMMIT)
+        return true;
+
+    assert(incompleteOperations_.size() > 0);
 
     // check if the oldest pending operation wants this data,
     // assume the results arrive in order
     ExecutingOperation& operation = *incompleteOperations_.at(0);
     const Operation& op = operation.operation();
-    if (!op.readsMemory()) return false;
 
+    assert(op.readsMemory());
+    
     Simulator::MemAddr wordAddr = operation.io(1).uIntWordValue();
     size_t size = 
         op.operand(2).elementWidth() * op.operand(2).elementCount();
@@ -552,7 +549,8 @@ MGSimDynamicLSU::OnMemoryReadCompleted(
 
 #ifdef DEBUG_TCE_MGSIM
     Application::logStream() 
-        << &operation << ": "
+        << GetName() << ": "
+        << &operation << " "
         << size << "b read (" << op.name() << ") from " << wordAddr 
         << " completed at stage " << operation.stage() << std::endl;
 #endif
@@ -560,12 +558,18 @@ MGSimDynamicLSU::OnMemoryReadCompleted(
     for (size_t i = 0; i < size / 8; ++i) {
         operation.iostorage_[1].rawBytes()[i] = data[i + (wordAddr - blockAddr)];
 #ifdef DEBUG_TCE_MGSIM
-        PRINT_VAR((int)operation.iostorage_[1].rawBytes()[i]);
+//        PRINT_VAR((int)operation.iostorage_[1].rawBytes()[i]);
 #endif
     }
     incompleteOperations_.pop_front();
     if (lateResult_) {
         // assume the result that we waited for has now arrived       
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream() 
+        << GetName() << ": "
+        << &operation << " late result arrived"
+        << std::endl;
+#endif
         parentTTA_.unsetLockRequest();
         lateResult_ = false;
     }
@@ -575,25 +579,37 @@ MGSimDynamicLSU::OnMemoryReadCompleted(
 bool
 MGSimDynamicLSU::OnMemoryWriteCompleted(Simulator::WClientID wid) {
 
-    if (incompleteOperations_.size() == 0) return false;
+    if (GetKernel()->GetCyclePhase() != Simulator::PHASE_COMMIT)
+        return true;
+
+    assert(incompleteOperations_.size() > 0);
     ExecutingOperation& operation = *incompleteOperations_.at(0);
     const Operation& op = operation.operation();
 
-    if (!op.writesMemory()) return false;
+    assert(op.writesMemory());
     
 #ifdef DEBUG_TCE_MGSIM
     Application::logStream()
+        << GetName() << ": "
         << &incompleteOperations_.front() << " " << op.name() 
         << " completed" << std::endl;
 #endif
        
     incompleteOperations_.pop_front();
+#if 0
     if (lateResult_) {
         // assume the operation of which completion we waited for has
         // now finished
+#ifdef DEBUG_TCE_MGSIM
+    Application::logStream() 
+        << GetName() << ": "
+        << &operation << " late result arrived"
+        << std::endl;
+#endif
         parentTTA_.unsetLockRequest();
         lateResult_ = false;
     }
+#endif
     return true;
 }
 
@@ -605,6 +621,39 @@ MGSimDynamicLSU::OnMemoryInvalidated(Simulator::MemAddr addr) {
 Simulator::Object&
 MGSimDynamicLSU::GetMemoryPeer() {
     return *this;
+}
+
+/**
+ * The LSU needs to lock the core for the current cycle in
+ * case of 
+ * a) arbitration conflict: could not issue the memory request 
+ * b) late completing operation: dynamic latencies with memory
+ * operations grow larger than the architectural latency
+ */
+bool
+MGSimDynamicLSU::needsLock() const {
+
+    for (ExecutingOperationFIFO::const_iterator i = 
+             incompleteOperations_.begin();
+         i != incompleteOperations_.end();
+         ++i) {
+        const ExecutingOperation& operation = **i;
+
+        if (operation.isLastPipelineStage()) {
+            // the result should be available / operation completed at this cycle and 
+            // it has not arrived yet
+#ifdef DEBUG_TCE_MGSIM
+            Application::logStream() 
+                << GetName() << ": "
+                << &operation 
+                << " at its last pipeline stage, locking "
+                << "until the result arrives"
+                << std::endl;
+#endif
+            return true;
+        }
+    }
+    return false;    
 }
 
 ////// MGSimTCEMemory ////////////////////////////////////////////////////
