@@ -36,17 +36,23 @@ CXX=clang++
 %.o: %.cpp
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} $< -O3 -c -o $@
 
-build: ideal_dpsram_dmem ideal_sram_dmem dram_dmem
+build: ideal_dpsram_dmem ideal_sram_dmem dram_dmem ideal_mbsram_dmem
 
-run: build ideal_dpsram_dmem.ini dram_dmem dram_dmem.ini 
-	@echo "*** ideal SRAM, single port, single LSU"
+run: build ideal_dpsram_dmem.ini dram_dmem dram_dmem.ini ideal_mbsram_dmem.ini
+	@echo "*** SRAM, single port, single LSU"
 	./ideal_sram_dmem ideal_sram_dmem.ini
 	@echo
 	@echo "*** DDR, single port, single LSU"
 	./dram_dmem dram_dmem.ini
 	@echo
-	@echo "*** ideam SRAM, dual port, dual LSU"
+	@echo "*** SRAM, dual port, dual LSU"
 	./ideal_dpsram_dmem ideal_dpsram_dmem.ini
+	@echo
+	@echo "*** SRAM, multibanked, dual LSU"
+	./ideal_dpsram_dmem ideal_dpsram_dmem.ini
+
+ideal_mbsram_dmem: ideal_mbsram_dmem.cc hello-2lsu.tpef tce_mgsim.o ${MGSIM_OBJECTS}
+	$(CXX) ${CPPFLAGS} ${CXXFLAGS} ${LDFLAGS} $< ${MGSIM_OBJECTS} tce_mgsim.o ${TCE_LIBS} -O3 -o $@
 
 ideal_dpsram_dmem: ideal_dpsram_dmem.cc hello-2lsu.tpef tce_mgsim.o ${MGSIM_OBJECTS}
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} ${LDFLAGS} $< ${MGSIM_OBJECTS} tce_mgsim.o ${TCE_LIBS} -O3 -o $@

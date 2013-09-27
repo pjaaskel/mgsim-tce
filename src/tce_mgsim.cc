@@ -363,8 +363,8 @@ MGSimDynamicLSU::tryIssuePending() {
 /**
  * Commits any pending memory requests.
  *
- * This is called when the memory access is known to go through to
- * the memory system without any stalls.
+ * This is called when the memory access arbitration is known, i.e.,
+ * which operations are known to go through and which not.
  */ 
 void
 MGSimDynamicLSU::commitPending() {
@@ -384,15 +384,22 @@ MGSimDynamicLSU::commitPending() {
             op.operand(2).elementWidth() * op.operand(2).elementCount();
         Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
 
-        if (!mgsimMemory_.Read(memClientID_, blockStart)) 
-            assert("Could not commit a read" && false);
-
+        if (!mgsimMemory_.Read(memClientID_, blockStart)) {
 #ifdef DEBUG_TCE_MGSIM
-        Application::logStream() 
-            << GetName() << ": "
-            << &operation << " "
-            << size << "b read from " << addr << " committed " << std::endl;
+            Application::logStream() 
+                << GetName() << ": "
+                << &operation << " "
+                << size << "b read from " << addr << " conflicted, needs stall " << std::endl;            
 #endif
+            return; /* TODO: we should handle this at the CHECK stage somehow? */
+        } else {
+#ifdef DEBUG_TCE_MGSIM
+            Application::logStream() 
+                << GetName() << ": "
+                << &operation << " "
+                << size << "b read from " << addr << " committed " << std::endl;
+#endif
+        }
 
     } else if (op.writesMemory()) {
 
@@ -402,7 +409,7 @@ MGSimDynamicLSU::commitPending() {
         // The starting address of the data block to access. 
         Simulator::MemAddr blockStart = (addr/dataBusWidth_)*dataBusWidth_;
 
-#ifdef DEBUG_TCE_MGSIM        
+#if defined(DEBUG_TCE_MGSIM) && 0
         PRINT_VAR(addr);
         PRINT_VAR(blockStart);
 #endif
@@ -427,7 +434,7 @@ MGSimDynamicLSU::commitPending() {
              i < (addr - blockStart + operationSize); ++i) {
             data.data[i] = operation.iostorage_[1].rawBytes()[i - (addr - blockStart)];
             data.mask[i] = true;
-#ifdef DEBUG_TCE_MGSIM
+#if defined(DEBUG_TCE_MGSIM) && 0
             PRINT_VAR((int)operation.iostorage_[1].rawBytes()[i - (addr - blockStart)]);
 #endif
         }
@@ -437,13 +444,18 @@ MGSimDynamicLSU::commitPending() {
             data.mask[i] = false;
         }
 
+        if (!mgsimMemory_.Write(
+                memClientID_, blockStart, data, (Simulator::WClientID)-1)) {
 #ifdef DEBUG_TCE_MGSIM
-        Application::logStream() 
-            << operationSize << "B write to " << addr << " committed " << std::endl;
+            Application::logStream() 
+                << operationSize << "B write to " << addr << " conflicted, needs stall " << std::endl;
+#endif           
+        } else {
+#ifdef DEBUG_TCE_MGSIM
+            Application::logStream() 
+                << operationSize << "B write to " << addr << " committed " << std::endl;
 #endif
-
-        mgsimMemory_.Write(
-            memClientID_, blockStart, data, (Simulator::WClientID)-1);
+        }
     } else {
         abortWithError("Got non memory operation in the pending operations?");
     }
@@ -632,6 +644,17 @@ MGSimDynamicLSU::GetMemoryPeer() {
  */
 bool
 MGSimDynamicLSU::needsLock() const {
+
+    if (pendingOperation_ != NULL) {
+#ifdef DEBUG_TCE_MGSIM
+        Application::logStream() 
+            << GetName() << ": "
+            << &pendingOperation_ 
+            << " could not be committed in the previous cycle. Need to stall and retry."
+            << std::endl;
+#endif
+        return true;
+    }
 
     for (ExecutingOperationFIFO::const_iterator i = 
              incompleteOperations_.begin();

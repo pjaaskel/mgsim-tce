@@ -1,8 +1,7 @@
 simulation test cases to add
 ----------------------------
-- 2-banked 2-LSU with conflict detection 
-- multibanked vector loads and stores
 - multiple address spaces
+- multibanked vector loads and stores
 - shared memory scenarios:
   - two TTA cores accessing an ideal SRAM with two ports
   - 64 (or other large number) TTA cores accessing a shared memory
@@ -25,7 +24,6 @@ integration API usability
 
 questions
 ---------
-
 - DDR test case hangs (store does not get through) in case MemFreq != CoreFreq.
   What does the memory model's clock control? Seems I can still control the DDR
   frequency from the *DDR.Channel* section's :Freq. 
