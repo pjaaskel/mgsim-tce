@@ -49,7 +49,7 @@ run: build ideal_dpsram_dmem.ini dram_dmem dram_dmem.ini ideal_mbsram_dmem.ini
 	./ideal_dpsram_dmem ideal_dpsram_dmem.ini
 	@echo
 	@echo "*** SRAM, multibanked, dual LSU"
-	./ideal_dpsram_dmem ideal_dpsram_dmem.ini
+	./ideal_mbsram_dmem ideal_mbsram_dmem.ini
 
 ideal_mbsram_dmem: ideal_mbsram_dmem.cc hello-2lsu.tpef tce_mgsim.o ${MGSIM_OBJECTS}
 	$(CXX) ${CPPFLAGS} ${CXXFLAGS} ${LDFLAGS} $< ${MGSIM_OBJECTS} tce_mgsim.o ${TCE_LIBS} -O3 -o $@

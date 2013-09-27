@@ -1,7 +1,9 @@
 simulation test cases to add
 ----------------------------
 - multiple address spaces
-- multibanked vector loads and stores
+- multibanked:
+  - wide vector loads and stores
+  - simultaneous scalar accesses
 - shared memory scenarios:
   - two TTA cores accessing an ideal SRAM with two ports
   - 64 (or other large number) TTA cores accessing a shared memory
